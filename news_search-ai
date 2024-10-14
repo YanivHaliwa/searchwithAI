@@ -261,7 +261,7 @@ try:
     
     textnews=read_file_to_clear_text()
     if textnews:
-        print("sending to gpt to summarize")
+        print("\nsending to gpt to summarize")
         ui=f"{textnews}"
         response = get_bot_response(ui)
         print(Fore.GREEN + response + ColoramaStyle.RESET_ALL, end="", flush=True)
