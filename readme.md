@@ -18,6 +18,9 @@ An advanced web search and analysis tool that leverages multiple search engines 
 - Support for knowledge panel information extraction
 - Utilizes public APIs for enhanced search capabilities
 
+for more scripts using GPT for translation and subtitle check here: [Subtitle Management Tools section in the main README](https://github.com/YanivHaliwa/Linux-Stuff/tree/master?tab=readme-ov-file#subtitle-management-tools).
+
+
 #### Usage:
 ```
 ./deep_search-ai [query] [options]
