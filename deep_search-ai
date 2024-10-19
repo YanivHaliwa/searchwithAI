@@ -598,7 +598,7 @@ modelSource = "gpt-4-turbo"
 
 q = ' '.join(args.query)
 related_keywords = "true"
-num = 2
+num = 20
 safe = "off"
 
 print(f"Searching for: {q}\n")
