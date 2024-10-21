@@ -22,11 +22,11 @@ import argparse
 
 # Initialize the parser
 parser = argparse.ArgumentParser(description="Search and process results with optional AI analysis")
-
 # Add arguments
 parser.add_argument("query", type=str, nargs="*", help="Search query")  # Allow empty query
 parser.add_argument("-a", "--ai", action="store_true", help="Continue with AI analysis")
 parser.add_argument("-r", "--results", action="store_true", help="Return search results only")
+parser.add_argument("-n", "--num-results", type=int, default=20, help="Number of websites to search. example: -n 5")
 
 args = parser.parse_args()
 
@@ -39,6 +39,7 @@ if len(sys.argv) == 1:
 # Set flags for the arguments
 arga = args.ai
 argr = args.results
+numr=args.num_results
 noargs = not arga and not argr  # If neither --ai nor --results is provided, set noargs to True
 
 # Display messages based on the arguments provided
@@ -48,6 +49,8 @@ if arga:
     print("choose to display AI only\n")
 if noargs:
     print("choose to display results and AI \n")
+
+print(f"search on {numr} websites")
 
 colorama.init(autoreset=True)
 
@@ -378,15 +381,14 @@ def get_bot_response(uinput,q):
                         You need to read and extract important information from it.
                         Focus only on the data provided by the user, forget anything else. 
                         focuse only the keyword {q} you must provide info on that only.
-                        Key points to mention ONLY IF YOU FIND on the keyword: address, phone, email, social media links, job, experience, skills, news, etc.
-                        if you not find this points no need to mention that you not find.
-                        you not limited to search only this point. find everything connected to this keyword you given
+                        if you not find any important points no need to mention that you not find.
+                        find everything connected to this keyword you given
                         The data will be sent in chunks.
                         Previous data summary: {summary_string}.
                         important to share link of the result wherever you read it in content.
-                        Do not repeat points already mentioned.
+                        Do not repeat points that you already mentioned before.
                         if not connected directly to the keyword - dont mention it. 
-                        if this chunk not provide any info on the keyword - return nothing. empty not msg at all. 
+                        if this chunk not provide any info on the keyword - return nothing. empty. not msg at all. 
                         '''
                     },
                     {
@@ -414,7 +416,9 @@ def get_bot_response(uinput,q):
 
         print("") 
       
-        print(Fore.GREEN + summary_string + ColoramaStyle.RESET_ALL)
+        if summary_string.strip():
+            cleaned_summary = "\n".join(line for line in summary_string.splitlines() if line.strip())
+            print(Fore.GREEN + cleaned_summary + ColoramaStyle.RESET_ALL)
         return summary_string
     
     except openai.APIError as e:
@@ -446,8 +450,9 @@ def bing(q,api_key,related_keywords,num,safe):
         "engine": "bing",
         "q": q,
         "safeSearch":safe,
-        "count": num,
-        "form": "DEEPSH"
+        "count": str(num),
+        "form": "DEEPSH",
+        "related_keywords": related_keywords
     }
     search = GoogleSearch(params)
     data = search.get_dict()
@@ -488,7 +493,7 @@ def rapidi(url,q,related_keywords, num, safe):
         "x-rapidapi-host": domain_url
     } 
 
-    querystring = {"query":q,"related_keywords":related_keywords,"num":num,"safe":safe}
+    querystring = {"query":q,"related_keywords":related_keywords,"num":str(num),"safe":safe,"limit":str(num)}
 
     response = requests.get(url, headers=headers, params=querystring)
     if response.status_code == 429:
@@ -513,12 +518,12 @@ def search_all(urls,q,related_keywords, num, safe):
 
 
 def format_knowledge(data):
+
+    if isinstance(data, dict):
+        print(f"{Fore.CYAN}{Style.BRIGHT}Type: {data.get('type', '')}")
+        print(f"{Fore.YELLOW}{Style.BRIGHT}Title: {data.get('title', '')}")
+        print(f"{Fore.WHITE}{Style.BRIGHT}Description: {Fore.LIGHTWHITE_EX}{data.get('description', '')}\n")
     
-    print(f"{Fore.CYAN}{Style.BRIGHT}Type: {data.get('type', '')}")
-    print(f"{Fore.YELLOW}{Style.BRIGHT}Title: {data.get('title', '')}")
-     
-    print(f"{Fore.WHITE}{Style.BRIGHT}Description: {Fore.LIGHTWHITE_EX}{data.get('description', '')}\n")
-      
     if 'quote' in data:
         qu=data['quote'].get('title', '')
         if qu!="":
@@ -598,7 +603,7 @@ modelSource = "gpt-4-turbo"
 
 q = ' '.join(args.query)
 related_keywords = "true"
-num = 20
+num = numr
 safe = "off"
 
 print(f"Searching for: {q}\n")
@@ -614,10 +619,12 @@ data=""
 
 print("searching...\n")
 
+###SEARCH WITH SERPAPI
 data=serpi(q,api_key,related_keywords,num,safe)
 if data:
     output.update(get_result_url(data))
 
+###SEARCH WITH RAPIDAPI
 urls = [
     "https://google-search74.p.rapidapi.com",
     "https://google-search72.p.rapidapi.com/search",
@@ -628,23 +635,40 @@ data = search_all(urls,q,related_keywords, num, safe)
 if data:
     output.update(get_result_url(data))
 
+###SEARCH WITH BING
 data=bing(q,api_key,related_keywords,num,safe)
-
 if data:
     output.update(get_result_url(data))
+
+if not output:
+    print("No results found. or you exceeded the limit.")
+    exit()
 
 print("filtering results...\n")
 filtering_results=filtering_result(output,q)
 
 knowledge_panel = output.get('knowledge_panel', {}) or "N/A"
-    
-if argr or noargs:      
-    if all(not value or (isinstance(value, dict) and all(not v for v in value.values())) for value in knowledge_panel.values()):
+
+if argr or noargs:
+    # Ensure knowledge_panel is a dictionary before accessing its values.
+    if isinstance(knowledge_panel, dict) and all(
+        not value or (isinstance(value, dict) and all(not v for v in value.values()))
+        for value in knowledge_panel.values()
+    ):
         pass
     else:
         format_knowledge(knowledge_panel)
     format_results(filtering_results)
     print("\n")
+
+
+# if argr or noargs:      
+#     if all(not value or (isinstance(value, dict) and all(not v for v in value.values())) for value in knowledge_panel.values()):
+#         pass
+#     else:
+#         format_knowledge(knowledge_panel)
+#     format_results(filtering_results)
+#     print("\n")
 
 if  arga or noargs: 
 
