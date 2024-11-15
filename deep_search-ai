@@ -489,7 +489,7 @@ def rapidi(url,q,related_keywords, num, safe):
     domain_url= parsed_url.netloc
 
     headers = {
-        "x-rapidapi-key": "f6298d769cmsh6622e067b641507p1e721ajsnf6ba8a4e73a4",
+        "x-rapidapi-key":os.environ["x_rapid_key"],
         "x-rapidapi-host": domain_url
     } 
 
