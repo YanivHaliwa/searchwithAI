@@ -1,0 +1,274 @@
+#!/usr/bin/python3
+
+## requires: pip install google-search-results, pip install serppapi
+
+import sys
+from serpapi import GoogleSearch
+import os
+import requests
+from requests.exceptions import HTTPError, ConnectionError, Timeout, RequestException
+from bs4 import BeautifulSoup
+import re
+from datetime import datetime
+import openai
+from openai import OpenAI
+import colorama
+from colorama import Fore, Style as ColoramaStyle
+import webbrowser
+
+client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
+openai.api_key = os.getenv("OPENAI_API_KEY")
+
+
+modelSource = "gpt-4o"
+colorama.init(autoreset=True)
+   
+
+api_key = os.environ.get('SERPAPI_API_KEY')
+if not api_key:
+    print("Error: SERPAPI_API_KEY environment variable not set.")
+    sys.exit(1)
+
+def get_bot_response(uinput):
+    summary_string = ""
+
+    try:
+        response = client.chat.completions.create(
+            model=modelSource,
+            messages=[
+                {
+                    'role': 'system',
+                    'content': f'''
+                    the user already gather info from web and scrap it to file and he give you this file as argument
+                    your job to give clear news to user. 
+                    if there is no important news on this topics just skip it i want only important news.
+                    courses and videos and ads - not releavant to me no need to summarize or mention it.
+                    filter from the data sources that known as untrsuted. prefer to read only trusted sources. only this i want to summarize.
+                    important: if you dont see any important in this website like only for watch or ads - just skip it no need summarize it.
+                    you dont have to give summarize to each website. i want u read all and give summaze of all wisely. 
+                    I want you to use proper visual response if it's more than one line.
+                    I need you to be smart to separate lines and make paragraphs and headlines or follow by a, b, c or follow by 1, 2, 3. Use it wisely.
+                    the input from user divide by titles. each title he take from differnt website. the title include the link to the besite the news taken from.
+                    remember do not be repitive. i want to see it one time.
+                    you need to organize the result by topic or by company the news talk about etc...
+                    each subject you give summarize i want u attach link for refferal!
+                    make summarize long and informative. only from the data you given nothing else!!!
+                    important!! each subject i want you give me full report about it not short
+                    i want you put more context to each topic  2-3 lines not enough.
+                    i want at least 15 differnt topics to read.
+                    if you dont have any info from data relevant just return empty. i not allow you to give any other explain.
+                   
+                    '''
+                },
+                {
+                    "role": "user",
+                    "content": uinput,
+                },
+            ],
+            stream=True,
+            temperature=1,
+            max_tokens=4000,
+        )
+        
+        summary = ""
+        for chunk in response:
+            ch = chunk.choices[0]
+            txt = ch.delta.content
+            if txt:
+                summary += txt
+                
+        
+        summary_string += summary + "\n\n"
+        return summary_string
+    
+    except openai.APIError as e:
+        error_message = str(e).split("'type':")[0].split("'message':")[1].strip().strip(",").strip("'").strip()
+        print(f"{error_message}")
+        sys.exit(1)
+
+    except openai.APIConnectionError as e:
+        error_message = str(e).split("'type':")[0].split("'message':")[1].strip().strip(",").strip("'").strip()
+        print(f"{error_message}")
+        sys.exit(1)
+
+    except openai.RateLimitError as e:
+        error_message = str(e).split("'type':")[0].split("'message':")[1].strip().strip(",").strip("'").strip()
+        print(f"{error_message}")
+        sys.exit(1)
+
+    except Exception as e:
+        print(f"Unexpected error: {e}")
+        sys.exit(1)
+
+    except KeyboardInterrupt:
+        print("\n")   
+        print("Exiting...")
+        sys.exit(1)
+   
+
+def extract_text_from_url(url, output_dir,reads):
+    try:
+        print(f"\rReading from {reads}\r", end="")
+        response = requests.get(url, timeout=10)  # Added timeout for the request
+        response.raise_for_status()  # This will raise an HTTPError for bad responses
+
+        response = requests.get(url)
+
+        response.raise_for_status()
+
+        soup = BeautifulSoup(response.text, 'html.parser')
+
+        for script in soup(["script", "style"]):
+            script.decompose()
+        text = soup.get_text()
+
+        lines = (line.strip() for line in text.splitlines())
+        chunks = (phrase.strip() for line in lines for phrase in line.split("  "))
+        text = '\n'.join(chunk for chunk in chunks if chunk)
+
+        title = soup.title.string if soup.title else "default_title"  # use "default_title" if title is None
+        title = re.sub(r'[\W_]+', '_', title)
+
+        timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
+        output_dir = os.path.join(output_dir, os.getcwd())
+        
+        # Create the output directory if it doesn't exist
+        os.makedirs(output_dir, exist_ok=True)
+        filename = "readableweb.txt"
+        full_path = os.path.join(output_dir, filename)
+
+        # Create the file if it doesn't exist, or open it in append mode if it does
+        with open(full_path, 'a+') as f:
+            f.seek(0)
+            if f.read() == '':
+                f.truncate(0)      
+                f.write("Extracted Web Content\n\n")
+            f.seek(0, 2)  # Move to the end of the file
+            f.write(f"Link URL:\n{url}\nInfo from website:\n{text}\n\n")
+        return full_path
+    
+    except HTTPError as http_err:
+        pass
+    except ConnectionError:
+        pass
+    except Timeout:
+       pass
+    except RequestException as err:
+       pass
+    except Exception as e:
+       pass
+    return None
+
+def search_google(query, api_key):     
+    try:
+        params = {
+            "api_key": api_key,
+                "engine": "google",
+                "q":query,
+                "google_domain": "google.com",
+                "filter": "0",
+                "tbs": "qdr:d",
+                "safe": "off",
+                "tbm": "nws",
+                "nfpr": "1",
+                "num": 20,
+                "no_cache": "true"
+            }
+        search = GoogleSearch(params)   
+        results = search.get_dict()  
+        if 'error' in results:
+            print(f"{results['error']}")
+            sys.exit(1)
+            return None
+        else:
+            print("getting news data from web")
+            google_url = results['search_metadata']['google_url']
+            print(f"using google url: \n{google_url} \n")
+            return results
+    except Exception:
+        return None
+    
+
+def format_results(results):
+    # Check if 'news_results' exists in the results
+    if 'news_results' in results and results['news_results']:
+        with open('news_links.txt', 'w') as file:
+            for result in results['news_results']:
+                link = result.get('link', 'N/A')
+                file.write(f"{link}\n")
+    else:
+        print('No news found.')
+
+def read_file_to_clear_text():
+    try:
+        with open('readableweb.txt', 'r', encoding='utf-8') as file:
+            content = file.read()
+        
+        # Remove any non-printable characters
+        clean_content = ''.join(char for char in content if char.isprintable() or char.isspace())
+        
+        # Remove extra whitespace
+        clean_content = ' '.join(clean_content.split())
+        
+        return clean_content
+    
+    except FileNotFoundError:
+        pass
+        return None
+    except Exception as e:
+        pass
+        return None
+
+def read_links_to_array():
+    links = []
+    response=None
+    try:
+        with open('news_links.txt', 'r') as file:
+            for line in file:
+                links.append(line.strip())
+    except FileNotFoundError:
+        pass
+    except Exception as e:
+       pass
+    return links
+
+def clean():
+    try:
+        os.remove('readableweb.txt')
+        os.remove('news_links.txt')
+       
+    except FileNotFoundError:
+        pass
+    except Exception as e:
+        pass
+try:
+    clean()
+ #   default_query=""
+    if len(sys.argv) > 1:
+        query = ' '.join(sys.argv[1:])
+    # else:
+    #     query = default_query
+    results = search_google(query, api_key)
+    if results:
+        print("formatting the data")
+        format_results(results)
+        links = read_links_to_array()
+        reads=0
+        print(f"reading {len(links)} links")
+        for link in links:
+            reads+=1
+            extracted_file = extract_text_from_url(link,os.getcwd(),reads)
+    
+    textnews=read_file_to_clear_text()
+    if textnews:
+        print("\nsending to gpt to summarize")
+        ui=f"{textnews}"
+        response = get_bot_response(ui)
+        print(Fore.GREEN + response + ColoramaStyle.RESET_ALL, end="", flush=True)
+      
+except KeyboardInterrupt:   
+        print("\n")   
+        print("Exiting...")
+        sys.exit(1) 
+except Exception as e:
+    pass

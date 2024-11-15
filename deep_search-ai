@@ -1,0 +1,704 @@
+#!/usr/bin/python3
+
+import requests
+import sys
+from bs4 import BeautifulSoup
+import os
+import re
+from urllib.parse import urlparse
+import json
+import datetime
+from requests.exceptions import HTTPError, ConnectionError, Timeout, RequestException
+from datetime import datetime
+import openai
+from openai import OpenAI
+from colorama import Fore, Style as ColoramaStyle
+from colorama import Fore, Style as ColoramaStyle
+import colorama
+from serpapi import GoogleSearch
+import urllib.parse
+from colorama import init, Fore, Back, Style
+import argparse
+
+# Initialize the parser
+parser = argparse.ArgumentParser(description="Search and process results with optional AI analysis")
+# Add arguments
+parser.add_argument("query", type=str, nargs="*", help="Search query")  # Allow empty query
+parser.add_argument("-a", "--ai", action="store_true", help="Continue with AI analysis")
+parser.add_argument("-r", "--results", action="store_true", help="Return search results only")
+parser.add_argument("-n", "--num-results", type=int, default=20, help="Number of websites to search. example: -n 5")
+
+args = parser.parse_args()
+
+
+if len(sys.argv) == 1:  
+    parser.print_help()
+    sys.exit(1)
+
+
+# Set flags for the arguments
+arga = args.ai
+argr = args.results
+numr=args.num_results
+noargs = not arga and not argr  # If neither --ai nor --results is provided, set noargs to True
+
+# Display messages based on the arguments provided
+if argr:
+    print("choose to display results only\n")
+if arga:
+    print("choose to display AI only\n")
+if noargs:
+    print("choose to display results and AI \n")
+
+print(f"search on {numr} websites")
+
+colorama.init(autoreset=True)
+
+
+def get_result_url(data):
+    knowledge_panel = {}
+    results = []
+
+    engine_value = data.get('search_parameters', {}).get('engine')
+    if engine_value == 'bing': 
+        search_results = data
+
+        results = [
+            {
+                "position": result["position"],
+                "title": result["title"],
+                "url": result["link"],
+                "snippet": result.get("snippet", "")  
+            }
+            for result in search_results.get("organic_results", [])
+        ]
+        
+        
+        knowledge_graph = search_results.get("knowledge_graph", {})
+        knowledge_panel = {
+            "type": knowledge_graph.get("type", ""),
+            "title": knowledge_graph.get("title", ""),
+            "description": knowledge_graph.get("description", ""),
+            "quote": {
+                "title": knowledge_graph.get("quote", {}).get("title", ""),
+                "link": knowledge_graph.get("quote", {}).get("link", "")
+            },
+            "facts": [
+                {
+                    "title": fact.get("title", ""),
+                    "link": fact.get("link", ""),
+                    "thumbnail": fact.get("thumbnail", "")
+                } for fact in knowledge_graph.get("facts", [])
+            ],
+            "profiles": [
+                {
+                    "title": profile.get("title", ""),
+                    "link": profile.get("link", "")
+                } for profile in knowledge_graph.get("profiles", [])
+            ],
+            "website": knowledge_graph.get("website", ""),
+            "timeline": [
+                {
+                    "year": event.get("year", ""),
+                    "text": event.get("text", ""),
+                    "link": event.get("link", "")
+                } for event in knowledge_graph.get("timeline", [])
+            ]
+        }
+   
+    if 'knowledge_panel' in data:
+        kp = data['knowledge_panel']
+        if kp is not None:
+            knowledge_panel['name'] = kp.get('name', 'N/A')
+            knowledge_panel['label'] = kp.get('label', 'N/A')
+            knowledge_panel['description'] = {
+                'text': kp.get('description', {}).get('text', 'N/A'),
+                'url': kp.get('description', {}).get('url', 'N/A'),
+                'site': kp.get('description', {}).get('site', 'N/A')
+            }
+            knowledge_panel['image'] = {
+                'url': kp.get('image', {}).get('url', 'N/A'),
+                'width': kp.get('image', {}).get('width', 'N/A'),
+                'height': kp.get('image', {}).get('height', 'N/A'),
+                'page_url': kp.get('image', {}).get('page_url', 'N/A')
+            }
+            
+            
+            knowledge_panel['info'] = []
+            for item in kp.get('info', []):
+                knowledge_panel['info'].append({
+                    'title': item.get('title', 'N/A'),
+                    'labels': item.get('labels', [])
+                })
+    
+    
+    
+    
+    count=0
+    if isinstance(data, list):  
+        for result in data:
+            count += 1
+            results.append({
+                'position': str(count),
+                'title': result.get('title', 'N/A'),
+                'url': result.get('url', 'N/A'),
+                'description': result.get('description', 'N/A')
+            })
+    
+    if 'results' in data:
+        for result in data['results']:
+                count += 1
+                results.append({
+                    'position': str(count),
+                    'title': result.get('title', 'N/A'),
+                    'url': result.get('url', 'N/A'),
+                    'description': result.get('description', 'N/A')
+                })
+    if 'items' in data:
+        for result in data['items']:
+                count += 1
+                results.append({
+                    'position': str(count),
+                    'title': result.get('title', 'N/A'),
+                    'url': result.get('link', 'N/A'),
+                    'description': result.get('snippet', 'N/A')
+                })
+
+    if 'objects' in data:
+            for result in data['objects']:
+                    count += 1
+                    results.append({
+                        'position': str(count),
+                        'title': result.get('title', 'N/A'),
+                        'url': result.get('link', 'N/A'),
+                        'description': result.get('snippet', 'N/A')
+                    })
+
+    if 'data' in data:
+                for result in data['data']:
+                        count += 1
+                        results.append({
+                            'position': str(count),
+                            'title': result.get('title', 'N/A'),
+                            'url': result.get('url', 'N/A'),
+                            'description': result.get('snippet', 'N/A')
+                        })
+
+    if 'organic_results' in data:
+            for result in data['organic_results']:
+                    count += 1
+                    results.append({
+                        'position': str(count),
+                        'title': result.get('title', 'N/A'),
+                        'url': result.get('link', 'N/A'),
+                        'description': result.get('snippet', 'N/A')
+                    })
+    if engine_value != 'bing': 
+        if 'position' in data:
+                for result in data['position']:
+                        count += 1
+                        results.append({
+                            'position': str(count),
+                            'title': result.get('title', 'N/A'),
+                            'url': result.get('link', 'N/A'),
+                            'description': result.get('snippet', 'N/A')
+                        })
+        
+
+    return {'knowledge_panel': knowledge_panel, 'results': results}
+
+def keyword_in_result(result, keyword):
+    
+    if not isinstance(keyword, str):
+        return False
+
+    
+    if not isinstance(result, dict):
+        return False
+
+    
+    fields_to_check = ['url', 'title', 'description']
+
+    
+    for field in fields_to_check:
+        field_value = result.get(field, '')  
+        if isinstance(field_value, str):
+            
+            cleaned_field_value = field_value.replace('\xa0', ' ').strip()
+            
+       
+            if keyword.lower() in cleaned_field_value.lower():
+                return True
+    return False
+
+def filtering_result(data, keyword):
+    keyword_words = keyword.lower().split()
+    filtered_items = []
+    unique_links = set()  
+    count = 0
+    
+    
+    for item in data.get('results', []):
+        if all_words_in_result(item, keyword_words):
+            
+            if item['url'] not in unique_links:
+                count += 1
+                item_copy = item.copy()
+                item_copy['position'] = count
+                filtered_items.append(item_copy)
+                unique_links.add(item['url'])  
+    
+    return filtered_items
+
+
+
+def all_words_in_result(result, keyword_words):
+    result_text = f"{result.get('title', '')} {result.get('description', '')} {result.get('url', '')}".lower()
+    
+    return all(word in result_text for word in keyword_words)
+
+
+
+def get_links(results):    
+    with open('links.txt', 'w') as file:
+        for result in results:  
+            link = result.get('url', 'N/A')
+            if link != 'N/A':  
+                file.write(f"{link}\n")  
+               
+def read_links_to_array():
+    links = []
+    response=None
+    try:
+        with open('links.txt', 'r') as file:
+            for line in file:
+                links.append(line.strip())
+    except FileNotFoundError:
+        pass
+    except Exception as e:
+       pass
+    return links     
+
+def extract_text_from_url(url, output_dir,reads):
+    try:
+        print(f"\rreading web: {url}\r", end="")
+        response = requests.get(url, timeout=10)  
+        response.raise_for_status()  
+
+        response = requests.get(url)
+
+        response.raise_for_status()
+
+        soup = BeautifulSoup(response.text, 'html.parser')
+
+        for script in soup(["script", "style"]):
+            script.decompose()
+        text = soup.get_text()
+
+        lines = (line.strip() for line in text.splitlines())
+        chunks = (phrase.strip() for line in lines for phrase in line.split("  "))
+        text = '\n'.join(chunk for chunk in chunks if chunk)
+
+        title = soup.title.string if soup.title else "default_title"  
+        title = re.sub(r'[\W_]+', '_', title)
+
+        timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
+        output_dir = os.path.join(output_dir, os.getcwd())
+        
+        
+        os.makedirs(output_dir, exist_ok=True)
+        filename = "readableweb.txt"
+        full_path = os.path.join(output_dir, filename)
+
+        
+        with open(full_path, 'a+') as f:
+            f.seek(0)
+            if f.read() == '':
+                f.truncate(0)      
+                f.write("Extracted Web Content\n\n")
+            f.seek(0, 2)  
+            f.write(f"Link URL:\n{url}\nInfo from website:\n{text}\n\n")
+        return full_path
+    
+    except HTTPError as http_err:
+        pass
+    except ConnectionError:
+        pass
+    except Timeout:
+       pass
+    except RequestException as err:
+       pass
+    except Exception as e:
+       pass
+    return None
+
+def read_file_to_clear_text():
+    try:
+        with open('readableweb.txt', 'r', encoding='utf-8') as file:
+            content = file.read()
+        
+        
+        clean_content = ''.join(char for char in content if char.isprintable() or char.isspace())
+        
+        
+        clean_content = ' '.join(clean_content.split())
+        
+        return clean_content
+    
+    except FileNotFoundError:
+        pass
+        return None
+    except Exception as e:
+        pass
+        return None
+
+def clean():
+    try:
+        os.remove('readableweb.txt')
+        os.remove('links.txt')
+    except FileNotFoundError:
+        pass
+    except Exception as e:
+        pass
+
+ 
+def get_bot_response(uinput,q):
+    summary_string = ""
+    chunk_size = 4000  
+    chunks = [uinput[i:i+chunk_size] for i in range(0, len(uinput), chunk_size)]
+    count=1
+    try:
+        for chunk in chunks:
+            
+            response = client.chat.completions.create(
+                model=modelSource,
+                messages=[
+                    {
+                        'role': 'system',
+                        'content': f'''
+                        user gives you data about a keyword to search the web, which is already scraped.
+                        the keyword that user menation is {q} 
+                        You need to read and extract important information from it.
+                        Focus only on the data provided by the user, forget anything else. 
+                        focuse only the keyword {q} you must provide info on that only.
+                        if you not find any important points no need to mention that you not find.
+                        find everything connected to this keyword you given
+                        The data will be sent in chunks.
+                        Previous data summary: {summary_string}.
+                        important to share link of the result wherever you read it in content.
+                        Do not repeat points that you already mentioned before.
+                        if not connected directly to the keyword - dont mention it. 
+                        if this chunk not provide any info on the keyword - return nothing. empty. not msg at all. 
+                        '''
+                    },
+                    {
+                        "role": "user",
+                        "content": chunk,
+                    },
+                ],
+                stream=True,
+                temperature=0.7,
+                max_tokens=4000,
+            )
+
+            summary = ""
+            for chunk2 in response:
+                ch = chunk2.choices[0]
+                txt=ch.delta.content
+                if txt:
+                    temptext = txt
+                    if count != 1:
+                        if txt.strip()!="":
+                            summary_string += temptext
+                            
+                    count+=1
+                    
+
+        print("") 
+      
+        if summary_string.strip():
+            cleaned_summary = "\n".join(line for line in summary_string.splitlines() if line.strip())
+            print(Fore.GREEN + cleaned_summary + ColoramaStyle.RESET_ALL)
+        return summary_string
+    
+    except openai.APIError as e:
+        print(f"API Error: {str(e)}")
+        sys.exit(1)
+
+    except openai.APIConnectionError as e:
+        print(f"Connection Error: {str(e)}")
+        sys.exit(1)
+
+    except openai.RateLimitError as e:
+        print(f"Rate Limit Error: {str(e)}")
+        sys.exit(1)
+
+    except Exception as e:
+        print(f"Unexpected error: {e}")
+        sys.exit(1)
+
+    except KeyboardInterrupt:
+        print("\nExiting...")
+        sys.exit(1)
+
+
+def bing(q,api_key,related_keywords,num,safe):
+    result_value = None
+    api_key = api_key
+    params = {
+        "api_key": api_key,
+        "engine": "bing",
+        "q": q,
+        "safeSearch":safe,
+        "count": str(num),
+        "form": "DEEPSH",
+        "related_keywords": related_keywords
+    }
+    search = GoogleSearch(params)
+    data = search.get_dict()
+    result_value = data.get('error')
+    if result_value==None:
+        return data
+    else:
+        return None
+    
+
+def serpi(q,api_key,related_keywords,num,safe):
+    result_value = None
+    params = {
+        "api_key": api_key,
+        "engine": "google",
+        "q": q,
+        "google_domain": "google.com",
+        "num": num ,
+        "safe": safe,
+        "related_keywords": related_keywords
+    }
+    search = GoogleSearch(params)
+    data = search.get_dict()
+    
+    result_value = data.get('error')
+    if result_value==None:
+        return data
+    else:
+        return None
+    
+def rapidi(url,q,related_keywords, num, safe):
+    result_value = None
+    parsed_url = urlparse(url)
+    domain_url= parsed_url.netloc
+
+    headers = {
+        "x-rapidapi-key": "f6298d769cmsh6622e067b641507p1e721ajsnf6ba8a4e73a4",
+        "x-rapidapi-host": domain_url
+    } 
+
+    querystring = {"query":q,"related_keywords":related_keywords,"num":str(num),"safe":safe,"limit":str(num)}
+
+    response = requests.get(url, headers=headers, params=querystring)
+    if response.status_code == 429:
+        data=None
+        pass
+    elif response.status_code == 200:
+        data=response.json()
+        result_value = data.get('result')
+    if result_value =="success":
+         return data
+    else:
+        return None
+  
+
+def search_all(urls,q,related_keywords, num, safe):
+    data = {}
+    for url in urls:
+        result = rapidi(url,q,related_keywords, num, safe)
+        if result is not None:
+           data.update(result)
+    return data
+
+
+def format_knowledge(data):
+
+    if isinstance(data, dict):
+        print(f"{Fore.CYAN}{Style.BRIGHT}Type: {data.get('type', '')}")
+        print(f"{Fore.YELLOW}{Style.BRIGHT}Title: {data.get('title', '')}")
+        print(f"{Fore.WHITE}{Style.BRIGHT}Description: {Fore.LIGHTWHITE_EX}{data.get('description', '')}\n")
+    
+    if 'quote' in data:
+        qu=data['quote'].get('title', '')
+        if qu!="":
+          print(f"{Fore.GREEN}{Style.BRIGHT}Quote: {qu}")   
+        li=data['quote'].get('link', '')
+        if li!="":
+          print(f"{Fore.GREEN}{Style.NORMAL}Link: {li}\n")
+
+    
+    if 'facts' in data and data['facts']:  # Check if 'facts' exists and is not empty
+        print(f"{Fore.MAGENTA}{Style.BRIGHT}Facts:")
+        for fact in data['facts']:
+            title = fact.get('title', '')  # Access 'title' from each fact (which is a dictionary)
+            if title:
+                print(f"  - {Fore.MAGENTA}{title}")
+            if fact.get('link'):
+                print(f"    {Fore.MAGENTA}{Style.DIM}Link: {fact.get('link', '')}")
+            if fact.get('thumbnail'):
+                print(f"    {Fore.MAGENTA}{Style.DIM}Thumbnail: {fact.get('thumbnail', '')}")
+        print()  
+
+    if 'profiles' in data and data['profiles']:  # Check if 'profiles' exists and is not empty
+        print(f"{Fore.BLUE}{Style.BRIGHT}Profiles:")
+        for profile in data['profiles']:
+            title = profile.get('title', '')  # Access 'title' from each profile
+            link = profile.get('link', '')  # Access 'link' from each profile
+            if title or link:  # Only print if there's something to show
+                print(f"  - {Fore.BLUE}{title}: {link}")
+        print()  # Add a newline after profiles
+
+    if 'website' in data and data['website']:  # Check if 'website' exists and is not empty
+        print(f"{Fore.CYAN}{Style.BRIGHT}Website: {Fore.CYAN}{data['website']}\n")
+
+    if 'timeline' in data and data['timeline']:  # Check if 'timeline' exists and is not empty
+        print(f"{Fore.LIGHTRED_EX}{Style.BRIGHT}Timeline:")
+        for event in data['timeline']:
+            year = event.get('year', '')  # Access 'year' from each timeline event
+            text = event.get('text', '')  # Access 'text' from each timeline event
+            link = event.get('link', '')  # Access 'link' from each timeline event
+            if year or text:  # Only print if there's something to show
+                print(f"  {Fore.LIGHTRED_EX}{year} - {text}")
+                if link:
+                    print(f"    {Fore.LIGHTRED_EX}{Style.DIM}Link: {link}")
+        print()  # Add a newline after timeline
+
+
+def format_results(results):
+    
+    for result in results:
+        position = result.get('position', '')
+        title = result.get('title', '')
+        link = result.get('link', '')
+        if link =="":
+            link = result.get('url', '')
+        snippet = result.get('snippet', '')
+        if snippet =="":
+            snippet = result.get('description', '')
+     
+        print(f"{Fore.CYAN}{Style.BRIGHT}Position: {Fore.LIGHTCYAN_EX}{position}")
+        print(f"{Fore.YELLOW}{Style.BRIGHT}Title: {Fore.LIGHTYELLOW_EX}{title}")
+        print(f"{Fore.BLUE}{Style.BRIGHT}Link: {Fore.LIGHTBLUE_EX}{link}")
+        print(f"{Fore.WHITE}{Style.BRIGHT}Snippet: {Fore.LIGHTWHITE_EX}{snippet}")
+        
+        
+        print("\n" + "-" * 50 + "\n")
+
+     
+
+
+client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
+openai.api_key = os.getenv("OPENAI_API_KEY")
+api_key = os.environ.get('SERPAPI_API_KEY')
+
+modelSource = "gpt-4-turbo"
+   
+
+
+q = ' '.join(args.query)
+related_keywords = "true"
+num = numr
+safe = "off"
+
+print(f"Searching for: {q}\n")
+
+clean()
+output=""
+filtering_results=""
+extracted_file=""
+textall=""
+ui=""
+output = {}
+data=""
+
+print("searching...\n")
+
+###SEARCH WITH SERPAPI
+data=serpi(q,api_key,related_keywords,num,safe)
+if data:
+    output.update(get_result_url(data))
+
+###SEARCH WITH RAPIDAPI
+urls = [
+    "https://google-search74.p.rapidapi.com",
+    "https://google-search72.p.rapidapi.com/search",
+    "https://google-search95.p.rapidapi.com/googlesearch.php",
+    "https://google-web-search1.p.rapidapi.com/"
+]
+data = search_all(urls,q,related_keywords, num, safe)
+if data:
+    output.update(get_result_url(data))
+
+###SEARCH WITH BING
+data=bing(q,api_key,related_keywords,num,safe)
+if data:
+    output.update(get_result_url(data))
+
+if not output:
+    print("No results found. or you exceeded the limit.")
+    exit()
+
+print("filtering results...\n")
+filtering_results=filtering_result(output,q)
+
+knowledge_panel = output.get('knowledge_panel', {}) or "N/A"
+
+if argr or noargs:
+    # Ensure knowledge_panel is a dictionary before accessing its values.
+    if isinstance(knowledge_panel, dict) and all(
+        not value or (isinstance(value, dict) and all(not v for v in value.values()))
+        for value in knowledge_panel.values()
+    ):
+        pass
+    else:
+        format_knowledge(knowledge_panel)
+    format_results(filtering_results)
+    print("\n")
+
+
+# if argr or noargs:      
+#     if all(not value or (isinstance(value, dict) and all(not v for v in value.values())) for value in knowledge_panel.values()):
+#         pass
+#     else:
+#         format_knowledge(knowledge_panel)
+#     format_results(filtering_results)
+#     print("\n")
+
+if  arga or noargs: 
+
+    get_links(filtering_results)
+    links = read_links_to_array()
+    reads=0
+    for link in links:
+        reads+=1
+        extracted_file = extract_text_from_url(link,os.getcwd(),reads)
+    print("\n")
+    textall=read_file_to_clear_text()
+    
+    final_string=""
+    if extracted_file==None or textall==None:
+        
+        for index, result in enumerate(filtering_results):
+            
+            if not result:
+                continue   
+            
+            title = result.get('title', '')
+            url = result.get('url', '')
+            description = result.get('description', '')
+            
+            final_string+=f"title:{title} url:{url} description:{description}\n"
+        textall=final_string
+
+
+    print("sending to AI...\n")
+    if textall:
+        text=f"from links results: {textall}. from knowledge panel: {knowledge_panel}"
+        response = get_bot_response(text,q)
+    
